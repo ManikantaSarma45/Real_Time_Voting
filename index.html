@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Real-Time Polling</title>
+    <link rel="stylesheet" href="static/styles.css">
+    <script>
+        let socket;
+
+        function connect(pollId) {
+            socket = new WebSocket(`ws://${location.host}/ws`);
+
+            socket.onmessage = function (event) {
+                const data = JSON.parse(event.data);
+                if (data.poll) {
+                    const results = data.poll.options;
+                    const resultsDiv = document.getElementById('results');
+                    resultsDiv.innerHTML = '';
+                    for (const [option, votes] of Object.entries(results)) {
+                        resultsDiv.innerHTML += `<p><strong>${option}</strong>: ${votes} votes</p>`;
+                    }
+                }
+            };
+
+            socket.onclose = function () {
+                console.error("WebSocket connection closed unexpectedly.");
+            };
+        }
+
+        function vote(option, pollId) {
+            const voteData = { poll_id: pollId, vote: option };
+            socket.send(JSON.stringify(voteData));
+        }
+
+        async function viewPoll(pollId) {
+            const response = await fetch(`/poll/${pollId}`);
+            if (response.ok) {
+                const pollData = await response.json();
+                const question = document.getElementById('question');
+                const optionsDiv = document.getElementById('options');
+                const resultsDiv = document.getElementById('results');
+
+                question.textContent = pollData.question;
+                optionsDiv.innerHTML = '';
+                resultsDiv.innerHTML = '';
+
+                for (const option of Object.keys(pollData.options)) {
+                    const optionDiv = document.createElement('div');
+                    optionDiv.className = 'option';
+                    optionDiv.innerHTML = `<button onclick="vote('${option}', ${pollId})">${option}</button>`;
+                    optionsDiv.appendChild(optionDiv);
+                }
+
+                document.getElementById('reset-button').style.display = 'block';
+                document.getElementById('reset-button').setAttribute('data-poll-id', pollId);
+
+                connect(pollId);
+            } else {
+                alert("Poll not found!");
+            }
+        }
+
+        async function createPoll() {
+            const question = document.getElementById('poll-question').value;
+            const options = document.getElementById('poll-options').value.split(',');
+
+            const response = await fetch('/create_poll', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ question, options }),
+            });
+
+            if (response.ok) {
+                const pollData = await response.json();
+                alert(`Poll created! Poll ID: ${pollData.poll_id}`);
+                viewPoll(pollData.poll_id);
+            } else {
+                alert("Error creating poll!");
+            }
+        }
+
+        async function resetPoll() {
+            const pollId = document.getElementById('reset-button').getAttribute('data-poll-id');
+            const response = await fetch(`/reset_poll/${pollId}`, { method: 'POST' });
+            if (response.ok) {
+                alert("Poll has been reset!");
+                viewPoll(pollId); // Refresh the poll view
+            } else {
+                alert("Error resetting poll!");
+            }
+        }
+    </script>
+</head>
+<body>
+    <div class="container">
+        <h1>Real-Time Polling App</h1>
+
+        <!-- Poll Creation Section -->
+        <div id="create-poll">
+            <h2>Create a Poll</h2>
+            <input id="poll-question" type="text" placeholder="Enter your poll question" />
+            <input id="poll-options" type="text" placeholder="Enter options (comma-separated)" />
+            <button onclick="createPoll()">Create Poll</button>
+        </div>
+
+        <!-- Poll Display Section -->
+        <div id="poll-display">
+            <h2>Poll</h2>
+            <p id="question"></p>
+            <div id="options" class="options"></div>
+        </div>
+
+        <!-- Reset Poll Button -->
+        <button id="reset-button" onclick="resetPoll()" style="display: none;">Reset Poll</button>
+
+        <!-- Live Results -->
+        <h2>Live Results</h2>
+        <div id="results" class="results"></div>
+    </div>
+</body>
+</html>
